@@ -1,13 +1,14 @@
 
 import React from 'react';
 import { MONTH_NAMES, DAY_NAMES, AUSTRIAN_HOLIDAYS_2026 } from '../constants';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 
 interface Props {
   onMonthClick: (index: number) => void;
+  onDayClick: (date: Date) => void;
 }
 
-const YearView: React.FC<Props> = ({ onMonthClick }) => {
+const YearView: React.FC<Props> = ({ onMonthClick, onDayClick }) => {
   const renderMonth = (monthIndex: number) => {
     const monthStart = startOfMonth(new Date(2026, monthIndex));
     const monthEnd = endOfMonth(monthStart);
@@ -20,13 +21,16 @@ const YearView: React.FC<Props> = ({ onMonthClick }) => {
     const blanks = Array(startDay).fill(null);
 
     return (
-      <div key={monthIndex} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:border-red-200 transition-all">
-        <button 
+      <div 
+        key={monthIndex} 
+        className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:border-red-400 hover:shadow-md transition-all group relative"
+      >
+        <div 
           onClick={() => onMonthClick(monthIndex)}
-          className="text-lg font-bold text-slate-800 mb-3 hover:text-red-600 text-left w-full"
+          className="text-lg font-bold text-slate-800 mb-3 group-hover:text-red-600 transition-colors cursor-pointer"
         >
           {MONTH_NAMES[monthIndex]}
-        </button>
+        </div>
         <div className="grid grid-cols-7 gap-1">
           {DAY_NAMES.map(d => (
             <div key={d} className="text-[10px] font-bold text-slate-400 text-center uppercase">{d}</div>
@@ -41,9 +45,13 @@ const YearView: React.FC<Props> = ({ onMonthClick }) => {
               <div
                 key={dateStr}
                 title={holiday?.name}
-                className={`text-xs h-6 flex items-center justify-center rounded-md relative cursor-default
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDayClick(day);
+                }}
+                className={`text-xs h-6 flex items-center justify-center rounded-md relative cursor-pointer transition-colors
                   ${holiday ? 'bg-red-50 text-red-600 font-bold' : isWeekend ? 'text-slate-400' : 'text-slate-700'}
-                  ${holiday ? 'hover:bg-red-100' : 'hover:bg-slate-50'}
+                  hover:bg-slate-100
                 `}
               >
                 {day.getDate()}

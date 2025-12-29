@@ -8,9 +8,10 @@ import {
 
 interface Props {
   currentDate: Date;
+  onDayClick: (date: Date) => void;
 }
 
-const MonthView: React.FC<Props> = ({ currentDate }) => {
+const MonthView: React.FC<Props> = ({ currentDate, onDayClick }) => {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);
   const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -36,13 +37,14 @@ const MonthView: React.FC<Props> = ({ currentDate }) => {
           return (
             <div 
               key={dateStr}
-              className={`min-h-[100px] p-2 border-r border-b border-slate-200 flex flex-col gap-1 transition-colors
-                ${!isCurrentMonth ? 'bg-slate-50/50 text-slate-300' : 'bg-white'}
+              onClick={() => onDayClick(day)}
+              className={`min-h-[100px] p-2 border-r border-b border-slate-200 flex flex-col gap-1 transition-all cursor-pointer group
+                ${!isCurrentMonth ? 'bg-slate-50/50 text-slate-300' : 'bg-white hover:bg-slate-50'}
                 ${isToday ? 'bg-blue-50/30' : ''}
               `}
             >
               <div className="flex justify-between items-start">
-                <span className={`text-sm font-semibold rounded-full w-8 h-8 flex items-center justify-center
+                <span className={`text-sm font-semibold rounded-full w-8 h-8 flex items-center justify-center transition-transform group-hover:scale-110
                   ${isToday ? 'bg-red-600 text-white shadow-sm' : isCurrentMonth ? 'text-slate-700' : 'text-slate-300'}
                   ${holiday && isCurrentMonth ? 'text-red-600 font-bold' : ''}
                 `}>

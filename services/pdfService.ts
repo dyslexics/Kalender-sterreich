@@ -1,6 +1,6 @@
 
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { MONTH_NAMES, AUSTRIAN_HOLIDAYS_2026 } from '../constants';
 import { format } from 'date-fns';
 
@@ -17,7 +17,7 @@ export const downloadYearlyPDF = () => {
     h.name
   ]);
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     startY: 35,
     head: [['Datum', 'Feiertag']],
     body: holidayData,
@@ -54,7 +54,7 @@ export const downloadMonthlyPDF = (monthIndex: number) => {
     rows.push([i, dayName, isHoliday ? isHoliday.name : '']);
   }
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     startY: 40,
     head: [['Tag', 'Wochentag', 'Anmerkung/Feiertag']],
     body: rows,
