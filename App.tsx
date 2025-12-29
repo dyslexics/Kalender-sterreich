@@ -5,13 +5,15 @@ import YearView from './components/YearView';
 import MonthView from './components/MonthView';
 import { ViewMode } from './types';
 import { AUSTRIAN_HOLIDAYS_2026 } from './constants';
-import { addMonths, subMonths, addDays, subDays, addWeeks, subWeeks, format, isAfter, parseISO, getMonth, eachDayOfInterval, startOfYear, endOfYear, isSameDay } from 'date-fns';
+import { INITIAL_INSPIRATIONS_2026 } from './inspirations_data';
+import { addMonths, subMonths, addDays, subDays, addWeeks, subWeeks, format, isAfter, parseISO, getMonth, eachDayOfInterval, startOfYear, endOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { downloadYearlyPDF, downloadMonthlyPDF } from './services/pdfService';
-import { Info, Calendar as CalendarIcon, X, Sun, Snowflake, Leaf, Flower2, Quote, MapPin, Download, RefreshCw, Save } from 'lucide-react';
+import { Info, Calendar as CalendarIcon, X, Sun, Snowflake, Leaf, Flower2, Quote, MapPin, RefreshCw, Save, Clipboard } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Initialize GoogleGenAI with the API key from environment variables as a named parameter.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('Year');
@@ -21,10 +23,11 @@ const App: React.FC = () => {
   const [dayDetails, setDayDetails] = useState<{ namenstag: string; inspiration: string } | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   
-  // Local storage management for inspirations
+  // Merge initial hardcoded data with localStorage
   const [cachedData, setCachedData] = useState<Record<string, { namenstag: string, inspiration: string }>>(() => {
     const saved = localStorage.getItem('calendar_inspirations_2026');
-    return saved ? JSON.parse(saved) : {};
+    const localStore = saved ? JSON.parse(saved) : {};
+    return { ...INITIAL_INSPIRATIONS_2026, ...localStore };
   });
 
   const [syncProgress, setSyncProgress] = useState<{ current: number, total: number } | null>(null);
@@ -48,27 +51,20 @@ const App: React.FC = () => {
 
     setLoadingDetails(true);
     try {
-      const prompt = `Du bist ein österreichischer Kalender-Experte. 
-      Nenne mir für den ${format(date, 'd. MMMM', { locale: de })} (Österreich):
-      1. Den Namenstag (nur Namen, Komma-separiert).
-      2. Eine kurze tägliche Inspiration oder ein Zitat mit Bezug zu Österreich oder der Jahreszeit.
-      Antworte strikt im Format:
-      Namenstag: [Namen]
-      Inspiration: [Text]`;
-
+      const prompt = `Gib mir für den ${format(date, 'd. MMMM', { locale: de })} (Österreich): Namenstag: [Namen] | Inspiration: [Max 100 Zeichen]`;
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
+      // Use .text property to get the response.
       const text = response.text || "";
-      const namenstag = text.match(/Namenstag:\s*(.*)/)?.[1] || "Heilige des Tages";
-      const inspiration = text.match(/Inspiration:\s*(.*)/)?.[1] || "Ein wunderbarer Tag in Österreich.";
+      const namenstag = text.match(/Namenstag:\s*([^|]*)/)?.[1]?.trim() || "Heilige des Tages";
+      const inspiration = text.match(/Inspiration:\s*(.*)/)?.[1]?.trim() || "Ein schöner Tag.";
       
       const newData = { namenstag, inspiration };
       setCachedData(prev => ({ ...prev, [dateKey]: newData }));
       setDayDetails(newData);
     } catch (error) {
-      console.error("Gemini Error:", error);
       setDayDetails({ namenstag: "Unbekannt", inspiration: "Genieße diesen schönen Tag!" });
     } finally {
       setLoadingDetails(false);
@@ -76,11 +72,8 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (selectedDate) {
-      fetchDayDetails(selectedDate);
-    } else {
-      setDayDetails(null);
-    }
+    if (selectedDate) fetchDayDetails(selectedDate);
+    else setDayDetails(null);
   }, [selectedDate]);
 
   const startFullYearSync = async () => {
@@ -97,61 +90,54 @@ const App: React.FC = () => {
     }
 
     setSyncProgress({ current: 0, total: daysToFetch.length });
-    
-    // Batch processing to avoid massive rate limits and browser freezing
     const batchSize = 5;
     for (let i = 0; i < daysToFetch.length; i += batchSize) {
       const batch = daysToFetch.slice(i, i + batchSize);
-      
       await Promise.all(batch.map(async (date) => {
         const dateKey = format(date, 'yyyy-MM-dd');
         try {
           const prompt = `Gib mir für den ${format(date, 'd. MMMM', { locale: de })} (Österreich) kurz: Namenstag: [Namen] | Inspiration: [Max 100 Zeichen]`;
           const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-lite-latest',
+            // Corrected model name to gemini-3-flash-preview for general text tasks.
+            model: 'gemini-3-flash-preview',
             contents: prompt,
           });
           const text = response.text || "";
           const namenstag = text.match(/Namenstag:\s*([^|]*)/)?.[1]?.trim() || "Heilige";
           const inspiration = text.match(/Inspiration:\s*(.*)/)?.[1]?.trim() || "Schöner Tag.";
-          
           setCachedData(prev => ({ ...prev, [dateKey]: { namenstag, inspiration } }));
-        } catch (e) {
-          console.warn(`Fehler bei ${dateKey}`, e);
-        }
+        } catch (e) { console.warn(e); }
       }));
-
       setSyncProgress(prev => prev ? { ...prev, current: i + batch.length } : null);
-      // Small delay between batches
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 800));
     }
-
     setSyncProgress(null);
-    alert("Synchronisierung abgeschlossen! Alle Daten sind nun lokal verfügbar.");
+  };
+
+  const copyDataToClipboard = () => {
+    const code = `export const INITIAL_INSPIRATIONS_2026: Record<string, { namenstag: string, inspiration: string }> = ${JSON.stringify(cachedData, null, 2)};`;
+    navigator.clipboard.writeText(code).then(() => {
+      alert("Daten-Code in die Zwischenablage kopiert! Du kannst dies nun in 'inspirations_data.ts' einfügen und committen.");
+    });
   };
 
   const exportLocalData = () => {
     const dataStr = JSON.stringify(cachedData, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    const exportFileDefaultName = 'österreich_kalender_2026_lokal.json';
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'österreich_kalender_2026_lokal.json';
+    link.click();
   };
 
-  const handleNavigate = (direction: number) => {
-    switch (viewMode) {
-      case 'Year': break;
-      case 'Month': setCurrentDate(direction > 0 ? addMonths(currentDate, 1) : subMonths(currentDate, 1)); break;
-      case 'Week': setCurrentDate(direction > 0 ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1)); break;
-      case 'Day': setCurrentDate(direction > 0 ? addDays(currentDate, 1) : subDays(currentDate, 1)); break;
-    }
-  };
-
+  // Implemented handleDownload function to handle PDF generation based on the active view.
   const handleDownload = () => {
-    if (viewMode === 'Year') downloadYearlyPDF();
-    else downloadMonthlyPDF(currentDate.getMonth());
+    if (viewMode === 'Year') {
+      downloadYearlyPDF();
+    } else if (viewMode === 'Month') {
+      downloadMonthlyPDF(getMonth(currentDate));
+    }
   };
 
   const getSeason = (date: Date) => {
@@ -164,86 +150,59 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <CalendarHeader 
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        currentDate={currentDate}
-        onNavigate={handleNavigate}
-        onDownload={handleDownload}
-      />
+      <CalendarHeader viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} onNavigate={(dir) => {
+        if (viewMode === 'Month') setCurrentDate(dir > 0 ? addMonths(currentDate, 1) : subMonths(currentDate, 1));
+      }} onDownload={handleDownload} />
 
-      <main className="flex-1 max-w-[1600px] mx-auto w-full pb-40">
+      <main className="flex-1 max-w-[1600px] mx-auto w-full pb-44">
         {viewMode === 'Year' && <YearView onMonthClick={(idx) => { setCurrentDate(new Date(2026, idx, 1)); setViewMode('Month'); }} onDayClick={setSelectedDate} />}
         {viewMode === 'Month' && <MonthView currentDate={currentDate} onDayClick={setSelectedDate} />}
         {(viewMode === 'Week' || viewMode === 'Day') && (
           <div className="p-12 text-center">
             <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md mx-auto border border-slate-100">
-              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><Info size={32} /></div>
               <h2 className="text-2xl font-bold text-slate-800 mb-2">Ansicht eingeschränkt</h2>
-              <p className="text-slate-600 mb-6">Bitte nutzen Sie die Jahres- oder Monatsübersicht, um Tage direkt auszuwählen.</p>
-              <button onClick={() => setViewMode('Year')} className="bg-red-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-red-700 transition-colors">Zurück zum Jahr</button>
+              <button onClick={() => setViewMode('Year')} className="bg-red-600 text-white px-6 py-2 rounded-xl font-bold mt-4">Zurück zum Jahr</button>
             </div>
           </div>
         )}
       </main>
 
-      {/* Sync Status Overlay */}
       {syncProgress && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl text-center">
             <RefreshCw className="w-12 h-12 text-red-600 mx-auto mb-4 animate-spin" />
-            <h3 className="text-xl font-bold text-slate-900 mb-2">2026 wird synchronisiert...</h3>
-            <p className="text-slate-500 text-sm mb-6">Wir laden alle Inspirationen und Namenstage für das gesamte Jahr herunter.</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Synchronisierung...</h3>
             <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden mb-2">
-              <div 
-                className="bg-red-600 h-full transition-all duration-300" 
-                style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
-              />
+              <div className="bg-red-600 h-full transition-all duration-300" style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }} />
             </div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              Tag {syncProgress.current} von {syncProgress.total}
-            </p>
+            <p className="text-xs font-bold text-slate-400">Tag {syncProgress.current} von {syncProgress.total}</p>
           </div>
         </div>
       )}
 
-      {/* Footer Tools */}
       <footer className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[95%] max-w-4xl z-40 flex flex-col gap-3">
-        <div className="flex gap-2 justify-center">
-          <button 
-            onClick={startFullYearSync}
-            className="bg-white/90 backdrop-blur text-slate-700 px-4 py-2 rounded-2xl shadow-xl border border-slate-200 text-xs font-bold flex items-center gap-2 hover:bg-red-50 hover:text-red-600 transition-all"
-          >
-            <RefreshCw size={14} /> 2026 Synchronisieren
+        <div className="flex flex-wrap gap-2 justify-center">
+          <button onClick={startFullYearSync} className="bg-white/90 backdrop-blur text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 text-[10px] font-bold flex items-center gap-2 hover:bg-red-50 hover:text-red-600 transition-all">
+            <RefreshCw size={12} /> Sync 2026
           </button>
-          <button 
-            onClick={exportLocalData}
-            className="bg-white/90 backdrop-blur text-slate-700 px-4 py-2 rounded-2xl shadow-xl border border-slate-200 text-xs font-bold flex items-center gap-2 hover:bg-slate-100 transition-all"
-          >
-            <Save size={14} /> Daten exportieren (.json)
+          <button onClick={copyDataToClipboard} className="bg-white/90 backdrop-blur text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 text-[10px] font-bold flex items-center gap-2 hover:bg-blue-50 hover:text-blue-600 transition-all">
+            <Clipboard size={12} /> Code für GitHub kopieren
+          </button>
+          <button onClick={exportLocalData} className="bg-white/90 backdrop-blur text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 text-[10px] font-bold flex items-center gap-2 hover:bg-slate-100 transition-all">
+            <Save size={12} /> Export JSON
           </button>
         </div>
         
-        <button 
-          onClick={() => setIsHolidaysModalOpen(true)}
-          className="w-full text-left bg-slate-900/95 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-4 hover:bg-slate-800 transition-all active:scale-[0.98]"
-        >
-          <div className="flex-shrink-0 w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center shadow-lg">
-            <CalendarIcon size={20} className="text-white" />
-          </div>
+        <button onClick={() => setIsHolidaysModalOpen(true)} className="w-full text-left bg-slate-900/95 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-4 hover:bg-slate-800 transition-all">
+          <div className="flex-shrink-0 w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center shadow-lg"><CalendarIcon size={20} className="text-white" /></div>
           <div className="flex-1 overflow-hidden">
-            <p className="text-[10px] uppercase font-bold tracking-widest text-red-400 mb-0.5">Feiertage & Vorschau</p>
-            <p className="text-sm font-medium text-slate-200 truncate italic">
-              Nächster Feiertag: {format(parseISO(nextHoliday.date), 'dd. MMMM', { locale: de })} ({nextHoliday.name})
-            </p>
+            <p className="text-[10px] uppercase font-bold tracking-widest text-red-400 mb-0.5">Persistente Daten</p>
+            <p className="text-sm font-medium text-slate-200 truncate italic">Nächster Feiertag: {format(parseISO(nextHoliday.date), 'dd. MMMM', { locale: de })}</p>
           </div>
-          <div className="hidden sm:block text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">
-            {Object.keys(cachedData).length} / 365 Tagen geladen
-          </div>
+          <div className="hidden sm:block text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">{Object.keys(cachedData).length} / 365 geladen</div>
         </button>
       </footer>
 
-      {/* Day Detail Modal */}
       {selectedDate && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md" onClick={() => setSelectedDate(null)} />
@@ -256,79 +215,43 @@ const App: React.FC = () => {
                 <h2 className="text-5xl font-black text-slate-900 leading-none mb-2">{format(selectedDate, 'd.')}</h2>
                 <h3 className="text-xl font-bold text-slate-600">{format(selectedDate, 'MMMM yyyy', { locale: de })}</h3>
               </div>
-              {AUSTRIAN_HOLIDAYS_2026.find(h => h.date === format(selectedDate, 'yyyy-MM-dd')) && (
-                <div className="inline-block bg-red-600 text-white px-6 py-2 rounded-full font-bold shadow-lg text-sm mb-4 animate-bounce">
-                  {AUSTRIAN_HOLIDAYS_2026.find(h => h.date === format(selectedDate, 'yyyy-MM-dd'))?.name}
-                </div>
-              )}
             </div>
-
             <div className="p-8 space-y-6">
               <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                <div className="flex items-center gap-3 mb-3 text-slate-400">
-                  <Info size={18} />
-                  <span className="text-xs font-bold uppercase tracking-wider">Namenstag</span>
-                </div>
-                <p className="text-slate-800 font-bold text-lg leading-snug">
-                  {loadingDetails ? <span className="animate-pulse">Lädt...</span> : dayDetails?.namenstag}
-                </p>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Namenstag</span>
+                <p className="text-slate-800 font-bold text-lg">{loadingDetails ? '...' : dayDetails?.namenstag}</p>
               </div>
-
-              <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden">
+              <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl relative">
                 <Quote className="absolute -top-2 -left-2 text-white/10 w-24 h-24" />
-                <div className="flex items-center gap-3 mb-3 text-red-400 relative z-10">
-                  <Flower2 size={18} />
-                  <span className="text-xs font-bold uppercase tracking-wider">Gedanke des Tages</span>
-                </div>
-                <p className="text-slate-100 font-medium leading-relaxed relative z-10 italic">
-                  "{loadingDetails ? 'Gemini verfasst eine Inspiration...' : dayDetails?.inspiration}"
-                </p>
+                <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest block mb-2 relative z-10">Inspiration</span>
+                <p className="text-slate-100 font-medium italic relative z-10">"{loadingDetails ? 'Wird geladen...' : dayDetails?.inspiration}"</p>
               </div>
-
-              <button onClick={() => setSelectedDate(null)} className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 py-4 rounded-2xl font-bold transition-all">Schließen</button>
+              <button onClick={() => setSelectedDate(null)} className="w-full bg-slate-200 text-slate-700 py-4 rounded-2xl font-bold">Schließen</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Holidays List Modal */}
       {isHolidaysModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsHolidaysModalOpen(false)} />
-          <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="bg-red-600 p-6 text-white flex justify-between items-center shrink-0">
-              <div>
-                <h2 className="text-2xl font-bold">Österreich 2026</h2>
-                <p className="text-red-100 text-sm">Alle bundesweiten Feiertage</p>
-              </div>
-              <button onClick={() => setIsHolidaysModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={24} /></button>
+          <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
+            <div className="bg-red-600 p-6 text-white shrink-0">
+              <h2 className="text-2xl font-bold">Österreich 2026</h2>
+              <p className="text-red-100 text-sm">Datenbank-Vorschau</p>
             </div>
             <div className="overflow-y-auto p-4 space-y-2">
-              {AUSTRIAN_HOLIDAYS_2026.map((holiday) => (
-                <div 
-                  key={holiday.date} 
-                  className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer border border-transparent hover:border-slate-200"
-                  onClick={() => { setSelectedDate(parseISO(holiday.date)); setIsHolidaysModalOpen(false); }}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col items-center justify-center w-12 h-12 bg-slate-100 rounded-xl border border-slate-200">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">{format(parseISO(holiday.date), 'MMM', { locale: de })}</span>
-                      <span className="text-lg font-bold text-slate-700 leading-none">{format(parseISO(holiday.date), 'dd')}</span>
-                    </div>
-                    <div>
-                      <p className="font-bold text-slate-800">{holiday.name}</p>
-                      <p className="text-xs text-slate-500 font-semibold">{format(parseISO(holiday.date), 'EEEE', { locale: de })}</p>
-                    </div>
-                  </div>
+              {AUSTRIAN_HOLIDAYS_2026.map(h => (
+                <div key={h.date} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                  <span className="font-bold text-slate-700">{format(parseISO(h.date), 'dd.MM.')}</span>
+                  <span className="text-slate-600 font-medium">{h.name}</span>
                 </div>
               ))}
             </div>
+            <div className="p-4 bg-slate-100"><button onClick={() => setIsHolidaysModalOpen(false)} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">Schließen</button></div>
           </div>
         </div>
       )}
-
-      <div className="fixed top-20 right-[-10%] w-[40%] h-[40%] bg-red-500/5 rounded-full blur-[120px] -z-10" />
-      <div className="fixed bottom-0 left-[-5%] w-[30%] h-[30%] bg-blue-500/5 rounded-full blur-[100px] -z-10" />
     </div>
   );
 };
