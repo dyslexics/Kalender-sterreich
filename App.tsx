@@ -9,11 +9,12 @@ import { INITIAL_INSPIRATIONS_2026 } from './inspirations_data';
 import { addMonths, subMonths, addDays, subDays, addWeeks, subWeeks, format, isAfter, parseISO, getMonth, eachDayOfInterval, startOfYear, endOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { downloadYearlyPDF, downloadMonthlyPDF } from './services/pdfService';
-import { Info, Calendar as CalendarIcon, X, Sun, Snowflake, Leaf, Flower2, Quote, MapPin, RefreshCw, Save, Clipboard } from 'lucide-react';
+import { Info, Calendar as CalendarIcon, X, Sun, Snowflake, Leaf, Flower2, Quote, RefreshCw, Save, Clipboard, ShieldAlert } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
-// Initialize GoogleGenAI with the API key from environment variables as a named parameter.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Optional AI initialization: Only if API key is provided in the environment
+const hasApiKey = !!process.env.API_KEY;
+const ai = hasApiKey ? new GoogleGenAI({ apiKey: process.env.API_KEY! }) : null;
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('Year');
@@ -49,6 +50,15 @@ const App: React.FC = () => {
       return;
     }
 
+    // Fallback if no AI is available
+    if (!ai) {
+      setDayDetails({ 
+        namenstag: "Heilige des Tages", 
+        inspiration: "Einen wunderschönen Tag in Österreich!" 
+      });
+      return;
+    }
+
     setLoadingDetails(true);
     try {
       const prompt = `Gib mir für den ${format(date, 'd. MMMM', { locale: de })} (Österreich): Namenstag: [Namen] | Inspiration: [Max 100 Zeichen]`;
@@ -56,16 +66,15 @@ const App: React.FC = () => {
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
-      // Use .text property to get the response.
       const text = response.text || "";
       const namenstag = text.match(/Namenstag:\s*([^|]*)/)?.[1]?.trim() || "Heilige des Tages";
-      const inspiration = text.match(/Inspiration:\s*(.*)/)?.[1]?.trim() || "Ein schöner Tag.";
+      const inspiration = text.match(/Inspiration:\s*(.*)/)?.[1]?.trim() || "Genießen Sie den Tag.";
       
       const newData = { namenstag, inspiration };
       setCachedData(prev => ({ ...prev, [dateKey]: newData }));
       setDayDetails(newData);
     } catch (error) {
-      setDayDetails({ namenstag: "Unbekannt", inspiration: "Genieße diesen schönen Tag!" });
+      setDayDetails({ namenstag: "Unbekannt", inspiration: "Alles Gute für heute!" });
     } finally {
       setLoadingDetails(false);
     }
@@ -77,7 +86,7 @@ const App: React.FC = () => {
   }, [selectedDate]);
 
   const startFullYearSync = async () => {
-    if (syncProgress) return;
+    if (!ai || syncProgress) return;
     const allDays = eachDayOfInterval({
       start: startOfYear(new Date(2026, 0, 1)),
       end: endOfYear(new Date(2026, 0, 1))
@@ -98,7 +107,6 @@ const App: React.FC = () => {
         try {
           const prompt = `Gib mir für den ${format(date, 'd. MMMM', { locale: de })} (Österreich) kurz: Namenstag: [Namen] | Inspiration: [Max 100 Zeichen]`;
           const response = await ai.models.generateContent({
-            // Corrected model name to gemini-3-flash-preview for general text tasks.
             model: 'gemini-3-flash-preview',
             contents: prompt,
           });
@@ -117,7 +125,7 @@ const App: React.FC = () => {
   const copyDataToClipboard = () => {
     const code = `export const INITIAL_INSPIRATIONS_2026: Record<string, { namenstag: string, inspiration: string }> = ${JSON.stringify(cachedData, null, 2)};`;
     navigator.clipboard.writeText(code).then(() => {
-      alert("Daten-Code in die Zwischenablage kopiert! Du kannst dies nun in 'inspirations_data.ts' einfügen und committen.");
+      alert("Daten-Code kopiert! Füge ihn in 'inspirations_data.ts' ein.");
     });
   };
 
@@ -131,13 +139,9 @@ const App: React.FC = () => {
     link.click();
   };
 
-  // Implemented handleDownload function to handle PDF generation based on the active view.
   const handleDownload = () => {
-    if (viewMode === 'Year') {
-      downloadYearlyPDF();
-    } else if (viewMode === 'Month') {
-      downloadMonthlyPDF(getMonth(currentDate));
-    }
+    if (viewMode === 'Year') downloadYearlyPDF();
+    else if (viewMode === 'Month') downloadMonthlyPDF(getMonth(currentDate));
   };
 
   const getSeason = (date: Date) => {
@@ -160,7 +164,7 @@ const App: React.FC = () => {
         {(viewMode === 'Week' || viewMode === 'Day') && (
           <div className="p-12 text-center">
             <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md mx-auto border border-slate-100">
-              <h2 className="text-2xl font-bold text-slate-800 mb-2">Ansicht eingeschränkt</h2>
+              <h2 className="text-2xl font-bold text-slate-800 mb-2">Ansicht nicht implementiert</h2>
               <button onClick={() => setViewMode('Year')} className="bg-red-600 text-white px-6 py-2 rounded-xl font-bold mt-4">Zurück zum Jahr</button>
             </div>
           </div>
@@ -182,21 +186,30 @@ const App: React.FC = () => {
 
       <footer className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[95%] max-w-4xl z-40 flex flex-col gap-3">
         <div className="flex flex-wrap gap-2 justify-center">
-          <button onClick={startFullYearSync} className="bg-white/90 backdrop-blur text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 text-[10px] font-bold flex items-center gap-2 hover:bg-red-50 hover:text-red-600 transition-all">
-            <RefreshCw size={12} /> Sync 2026
-          </button>
-          <button onClick={copyDataToClipboard} className="bg-white/90 backdrop-blur text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 text-[10px] font-bold flex items-center gap-2 hover:bg-blue-50 hover:text-blue-600 transition-all">
-            <Clipboard size={12} /> Code für GitHub kopieren
-          </button>
+          {hasApiKey && (
+            <>
+              <button onClick={startFullYearSync} className="bg-white/90 backdrop-blur text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 text-[10px] font-bold flex items-center gap-2 hover:bg-red-50 hover:text-red-600 transition-all">
+                <RefreshCw size={12} /> Sync mit KI
+              </button>
+              <button onClick={copyDataToClipboard} className="bg-white/90 backdrop-blur text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 text-[10px] font-bold flex items-center gap-2 hover:bg-blue-50 hover:text-blue-600 transition-all">
+                <Clipboard size={12} /> Code kopieren
+              </button>
+            </>
+          )}
           <button onClick={exportLocalData} className="bg-white/90 backdrop-blur text-slate-700 px-3 py-2 rounded-xl shadow-lg border border-slate-200 text-[10px] font-bold flex items-center gap-2 hover:bg-slate-100 transition-all">
-            <Save size={12} /> Export JSON
+            <Save size={12} /> JSON Export
           </button>
+          {!hasApiKey && (
+            <div className="bg-amber-100/90 backdrop-blur text-amber-700 px-3 py-2 rounded-xl shadow-lg border border-amber-200 text-[10px] font-bold flex items-center gap-2">
+              <ShieldAlert size={12} /> Lokal-Modus (Keine KI)
+            </div>
+          )}
         </div>
         
         <button onClick={() => setIsHolidaysModalOpen(true)} className="w-full text-left bg-slate-900/95 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-4 hover:bg-slate-800 transition-all">
           <div className="flex-shrink-0 w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center shadow-lg"><CalendarIcon size={20} className="text-white" /></div>
           <div className="flex-1 overflow-hidden">
-            <p className="text-[10px] uppercase font-bold tracking-widest text-red-400 mb-0.5">Persistente Daten</p>
+            <p className="text-[10px] uppercase font-bold tracking-widest text-red-400 mb-0.5">Österreich 2026</p>
             <p className="text-sm font-medium text-slate-200 truncate italic">Nächster Feiertag: {format(parseISO(nextHoliday.date), 'dd. MMMM', { locale: de })}</p>
           </div>
           <div className="hidden sm:block text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">{Object.keys(cachedData).length} / 365 geladen</div>
@@ -224,9 +237,9 @@ const App: React.FC = () => {
               <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl relative">
                 <Quote className="absolute -top-2 -left-2 text-white/10 w-24 h-24" />
                 <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest block mb-2 relative z-10">Inspiration</span>
-                <p className="text-slate-100 font-medium italic relative z-10">"{loadingDetails ? 'Wird geladen...' : dayDetails?.inspiration}"</p>
+                <p className="text-slate-100 font-medium italic relative z-10">"{loadingDetails ? 'Gemini verfasst...' : dayDetails?.inspiration}"</p>
               </div>
-              <button onClick={() => setSelectedDate(null)} className="w-full bg-slate-200 text-slate-700 py-4 rounded-2xl font-bold">Schließen</button>
+              <button onClick={() => setSelectedDate(null)} className="w-full bg-slate-200 text-slate-700 py-4 rounded-2xl font-bold hover:bg-slate-300 transition-colors">Schließen</button>
             </div>
           </div>
         </div>
@@ -238,13 +251,13 @@ const App: React.FC = () => {
           <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
             <div className="bg-red-600 p-6 text-white shrink-0">
               <h2 className="text-2xl font-bold">Österreich 2026</h2>
-              <p className="text-red-100 text-sm">Datenbank-Vorschau</p>
+              <p className="text-red-100 text-sm">Feiertage im Überblick</p>
             </div>
             <div className="overflow-y-auto p-4 space-y-2">
               {AUSTRIAN_HOLIDAYS_2026.map(h => (
-                <div key={h.date} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                <div key={h.date} onClick={() => { setSelectedDate(parseISO(h.date)); setIsHolidaysModalOpen(false); }} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl hover:bg-red-50 cursor-pointer transition-colors group">
                   <span className="font-bold text-slate-700">{format(parseISO(h.date), 'dd.MM.')}</span>
-                  <span className="text-slate-600 font-medium">{h.name}</span>
+                  <span className="text-slate-600 font-medium group-hover:text-red-600">{h.name}</span>
                 </div>
               ))}
             </div>
