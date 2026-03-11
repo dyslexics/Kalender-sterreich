@@ -12,9 +12,10 @@ import { downloadYearlyPDF, downloadMonthlyPDF } from './services/pdfService';
 import { Info, Calendar as CalendarIcon, X, Sun, Snowflake, Leaf, Flower2, Quote, RefreshCw, Save, Clipboard, ShieldAlert } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
-// Optional AI initialization: Only if API key is provided in the environment
-const hasApiKey = !!process.env.API_KEY;
-const ai = hasApiKey ? new GoogleGenAI({ apiKey: process.env.API_KEY! }) : null;
+// Optional AI initialization: prefer GEMINI_API_KEY, keep API_KEY as fallback for compatibility
+const resolvedApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+const hasApiKey = !!resolvedApiKey;
+const ai = hasApiKey ? new GoogleGenAI({ apiKey: resolvedApiKey! }) : null;
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('Year');

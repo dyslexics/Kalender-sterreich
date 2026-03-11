@@ -25,7 +25,7 @@ export const downloadYearlyPDF = () => {
     headStyles: { fillColor: [191, 33, 47] } // Austrian Red
   });
 
-  doc.save('Kalender_2026_Oesterreich.pdf');
+  doc.save('Kalender_2026_Österreich.pdf');
 };
 
 export const downloadMonthlyPDF = (monthIndex: number) => {

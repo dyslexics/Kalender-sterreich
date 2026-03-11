@@ -1,8 +1,9 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const hasApiKey = !!process.env.API_KEY;
-const ai = hasApiKey ? new GoogleGenAI({ apiKey: process.env.API_KEY! }) : null;
+const resolvedApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+const hasApiKey = !!resolvedApiKey;
+const ai = hasApiKey ? new GoogleGenAI({ apiKey: resolvedApiKey! }) : null;
 
 export async function getAustrianFact(date: string) {
   if (!ai) return "Wussten Sie, dass Österreich zu über 60% aus Bergen besteht?";
